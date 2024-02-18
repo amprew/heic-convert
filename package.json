@@ -18,7 +18,7 @@
   "scripts": {
     "build:watch": "node ./build.mjs --watch",
     "build": "node ./build.mjs",
-    "serve": "http-server -c-1 .",
+    "serve": "http-server -c-1 ./public",
     "start": "npm-run-all -p build:watch serve"
   },
   "eslintConfig": {

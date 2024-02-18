@@ -17,7 +17,7 @@ function downloadImage(imageAddress) {
 
 function App() {
   const worker = new Worker(
-    '/dist/worker/worker.js'
+    'dist/worker/worker.js'
   );
 
   worker.onmessage = function(msg) {
