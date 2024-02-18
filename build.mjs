@@ -5,7 +5,7 @@ async function runBuild() {
   const result = await esbuild.build({
     entryPoints: ['./src/index.tsx', './src/worker/worker.js'],
     bundle: true,
-    outdir: 'dist',
+    outdir: 'public/dist',
   })
 
   console.log(result)
