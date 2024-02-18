@@ -16,9 +16,10 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
+    "build:watch": "node ./build.mjs --watch",
     "build": "node ./build.mjs",
     "serve": "http-server -c-1 .",
-    "start": "npm-run-all -p build serve"
+    "start": "npm-run-all -p build:watch serve"
   },
   "eslintConfig": {
     "extends": [
