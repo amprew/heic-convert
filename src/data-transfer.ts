@@ -41,7 +41,7 @@ export function buildMessageBuffer(imageType: ImageType, quality: number, imageD
 export function parseMessageBuffer(buffer: Uint8Array): { type: ImageType, quality: number, imageData: Uint8Array } {
   // Extract type and quality
   // byte 1 and byte 2.
-  const metaBuffer = new Uint8Array(buffer, 0, 2);
+  const metaBuffer = buffer.slice(0,2);
   const typeInt = metaBuffer[0];
   const quality = metaBuffer[1];
   const type = imageTypeToName[typeInt];
