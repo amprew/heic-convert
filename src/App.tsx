@@ -5,6 +5,7 @@ import { useRef } from "react";
 import { readImageBuffer } from './image-reader';
 import { buildMessageBuffer, parseMessageBuffer } from './data-transfer';
 import { createOrGetWorker, terminateAllWorkers } from './worker-utils';
+import { ImageType } from './types';
 
 function downloadImage(imageAddress) {
   var link = document.createElement('a');
@@ -37,7 +38,9 @@ function App() {
   }, []);
 
   const qualityRef = useRef<HTMLInputElement | null>(null);
+  const typeRef = useRef<HTMLSelectElement | null>(null);
   const getQuality = () => qualityRef?.current?.value ? parseInt(qualityRef?.current?.value) : 100;
+  const getType = (): ImageType => typeRef?.current?.value as ImageType;
 
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     // TODO: pass index of file to associate when webworker returns.
@@ -63,7 +66,7 @@ function App() {
 
       const uint8Array = await readImageBuffer(file);
       const buffer = buildMessageBuffer({
-        type: "jpeg",
+        type: getType(),
         quality: getQuality(),
         index: i,
         imageData: uint8Array
@@ -76,6 +79,10 @@ function App() {
   return (
     <div className="App">
       <input type="text" defaultValue={75} ref={qualityRef} />
+      <select ref={typeRef}>
+        <option value="jpeg" defaultChecked>jpeg</option>
+        <option value="png">png</option>
+      </select>
       <input type="file" onChange={onChange} accept=".heic" multiple />
     </div>
   );
