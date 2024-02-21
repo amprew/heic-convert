@@ -78,12 +78,15 @@ function App() {
 
   return (
     <div className="App">
-      <input type="text" defaultValue={75} ref={qualityRef} />
-      <select ref={typeRef}>
+      <label htmlFor="quality">Quality:</label>
+      <input type="text" id="quality" defaultValue={75} ref={qualityRef} />
+      <label htmlFor="type">Type:</label>
+      <select ref={typeRef} id="type">
         <option value="jpeg" defaultChecked>jpeg</option>
         <option value="png">png</option>
       </select>
-      <input type="file" onChange={onChange} accept=".heic" multiple />
+      <label htmlFor="files">Files:</label>
+      <input id="files" type="file" onChange={onChange} accept=".heic" multiple />
     </div>
   );
 }
