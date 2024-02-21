@@ -26,7 +26,7 @@ async function processMessage() {
   tasksProcessing = true;
 
   const msg = taskQueue.shift();
-  const { type, quality, imageData } = parseMessageBuffer(msg.data);
+  const { type, quality, index, imageData } = parseMessageBuffer(msg.data);
 
   console.log('image data', imageData);
   const data = await heicDecode({ buffer: imageData })
@@ -42,7 +42,12 @@ async function processMessage() {
     type: `image/${type}`
   })
 
-  const buffer = buildMessageBuffer(type, quality, convertedData)
+  const buffer = buildMessageBuffer({
+    type,
+    quality,
+    index,
+    imageData: convertedData
+  })
 
   self.postMessage(buffer, [buffer.buffer]);
 

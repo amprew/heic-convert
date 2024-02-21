@@ -62,7 +62,12 @@ function App() {
       const file = files[i];
 
       const uint8Array = await readImageBuffer(file);
-      const buffer = buildMessageBuffer("jpeg", getQuality(), uint8Array)
+      const buffer = buildMessageBuffer({
+        type: "jpeg",
+        quality: getQuality(),
+        index: i,
+        imageData: uint8Array
+      })
 
       getWorker(i).postMessage(buffer, [buffer.buffer]);
     }
