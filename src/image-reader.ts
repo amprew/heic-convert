@@ -17,5 +17,5 @@ export async function readImageBuffer(blob: Blob): Promise<Uint8Array> {
     reader.readAsArrayBuffer(blob);
   });
 
-  // should we have some sort of timeout.
+  // should we have some sort of timeout in case the image is not read in X seconds.
 }
