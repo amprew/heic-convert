@@ -11,10 +11,21 @@ declare interface DedicatedWorkerGlobalScope {
 
 declare var self: DedicatedWorkerGlobalScope;
 
-self.onmessage = async function(msg) {
-  console.log('msg', msg)
-  console.log('msg', msg.data)
+let tasksProcessing = false;
+const taskQueue = [];
 
+self.onmessage = async function(msg) {
+  taskQueue.push(msg);
+  if(!tasksProcessing) { processMessage(); }
+}
+async function processMessage() {
+  if(taskQueue.length == 0) {
+    tasksProcessing = false;
+    return;
+  }
+  tasksProcessing = true;
+
+  const msg = taskQueue.shift();
   const { type, quality, imageData } = parseMessageBuffer(msg.data);
 
   console.log('image data', imageData);
@@ -34,4 +45,11 @@ self.onmessage = async function(msg) {
   const buffer = buildMessageBuffer(type, quality, convertedData)
 
   self.postMessage(buffer, [buffer.buffer]);
+
+  await waitFor(100);
+  processMessage();
+}
+
+function waitFor(ms) {
+  return new Promise(res => setTimeout(res, ms));
 }

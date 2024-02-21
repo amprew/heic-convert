@@ -1,10 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
-import './App.css';
 import { useRef } from "react";
 
 import { readImageBuffer } from './image-reader';
 import { buildMessageBuffer, parseMessageBuffer } from './data-transfer';
+import { createOrGetWorker, terminateAllWorkers } from './worker-utils';
 
 function downloadImage(imageAddress) {
   var link = document.createElement('a');
@@ -15,40 +15,56 @@ function downloadImage(imageAddress) {
   document.body.removeChild(link);
 }
 
-function App() {
-  const worker = new Worker(
-    'dist/worker/worker.js'
-  );
+function onWorkerMessage(msg) {
+  console.log("message reply done", msg);
+  const { type, imageData } = parseMessageBuffer(msg.data);
+  const blob = new Blob([imageData], {type: `image/${type}`})
+  const url = URL.createObjectURL(blob);
+  downloadImage(url);
+}
 
-  worker.onmessage = function(msg) {
-    console.log("message reply done", msg);
-    const { type, imageData } = parseMessageBuffer(msg.data);
-    const blob = new Blob([imageData], {type: `image/${type}`})
-    const url = URL.createObjectURL(blob);
-    downloadImage(url);
-  }
+function registerWorkerListening() {
+  createOrGetWorker().forEach(worker => {
+    worker.onmessage = onWorkerMessage;
+  })
+}
+
+function App() {
+  const numberOfWorkers = 2;
 
   useEffect(() => {
-    function onUnload() {
-      worker.terminate();
-    }
-    window.addEventListener("beforeunload", onUnload);
+    window.addEventListener("beforeunload", terminateAllWorkers);
   }, []);
 
   const qualityRef = useRef<HTMLInputElement | null>(null);
   const getQuality = () => qualityRef?.current?.value ? parseInt(qualityRef?.current?.value) : 100;
 
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+    // TODO: pass index of file to associate when webworker returns.
+    // pass in buffer data and return once complete.
+    // Data is stored in a uint8array so 256 is the max amount we can upload at once.
+    // I am sure we should set the limit lower than this!
+
+    // TODO: once upload has started we need to create a lock on submitting
+    // any more events until all have completed or failed.
+    const workers = createOrGetWorker(numberOfWorkers);
+    const getWorker = (index: number) => {
+      return workers[(index+1)%numberOfWorkers];
+    }
+    registerWorkerListening()
+
     const files = e.target.files as FileList;
 
     if(!files) return;
 
-    for (const file of files) {
-      const uint8Array = await readImageBuffer(file);
+    const numOfFiles = files.length;
+    for(let i=0; i<numOfFiles; i++) {
+      const file = files[i];
 
+      const uint8Array = await readImageBuffer(file);
       const buffer = buildMessageBuffer("jpeg", getQuality(), uint8Array)
 
-      worker.postMessage(buffer, [buffer.buffer]);
+      getWorker(i).postMessage(buffer, [buffer.buffer]);
     }
   }
 
