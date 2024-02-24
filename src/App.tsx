@@ -53,6 +53,16 @@ function App() {
   const getWorkerCount = () => parseInt(workersRef?.current?.value);
 
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const numberOfWorkers = getWorkerCount();
+    const files = e.target.files as FileList;
+
+    if(!files) return;
+    if(numberOfWorkers > files.length) {
+      alert("number of workers cannot be greater than number of files.");
+      e.target.value = null;
+
+      return;
+    }
     // TODO: pass index of file to associate when webworker returns.
     // pass in buffer data and return once complete.
     // Data is stored in a uint8array so 256 is the max amount we can upload at once.
@@ -60,16 +70,11 @@ function App() {
 
     // TODO: once upload has started we need to create a lock on submitting
     // any more events until all have completed or failed.
-    const numberOfWorkers = getWorkerCount();
     const workers = createOrGetWorker(numberOfWorkers);
     const getWorker = (index: number) => {
       return workers[(index+1)%numberOfWorkers];
     }
     registerWorkerListening()
-
-    const files = e.target.files as FileList;
-
-    if(!files) return;
 
     const numOfFiles = files.length;
     for(let i=0; i<numOfFiles; i++) {
@@ -90,7 +95,7 @@ function App() {
   return (
     <div className="App">
       <label htmlFor="workers">Workers:</label>
-      <input type="text" id="workers" defaultValue={2} ref={workersRef} />
+      <input type="text" id="workers" defaultValue={1} ref={workersRef} />
       <label htmlFor="quality">Quality:</label>
       <input type="text" id="quality" defaultValue={75} ref={qualityRef} />
       <label htmlFor="type">Type:</label>
