@@ -9,6 +9,9 @@ async function runBuild() {
     entryPoints: ['./src/index.tsx', './src/worker/worker.js'],
     bundle: true,
     outdir: 'public/dist',
+    minify: true,
+    minifySyntax: true,
+    minifyIdentifiers: true
   })
 }
 
