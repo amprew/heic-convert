@@ -1,10 +1,8 @@
-import React, { useEffect, useState } from 'react';
-
-import { useRef } from "react";
+import React, { useEffect, useRef } from 'react';
 
 import { readImageBuffer } from './image-reader';
 import { buildMessageBuffer, parseMessageBuffer } from './data-transfer';
-import { createOrGetWorker, terminateAllWorkers } from './worker-utils';
+import { createOrGetWorker, terminateAllWorkers, removeWorkerIndex } from './worker-utils';
 import { ImageType } from './types';
 
 function downloadImage(imageAddress) {
@@ -16,31 +14,43 @@ function downloadImage(imageAddress) {
   document.body.removeChild(link);
 }
 
-function onWorkerMessage(msg) {
+type Task = { name: string };
+function onWorkerMessage(worker: Worker, msg: MessageEvent<Task | Uint8Array>, index: number) {
+  if(msg.data["name"] == "shutdown"){
+    console.log("shutting down worker...");
+    worker.terminate();
+    removeWorkerIndex(index);
+    return;
+  }
+
+  if(!(msg.data instanceof Uint8Array)) {
+    return;
+  }
+
   console.log("message reply done", msg);
   const { type, imageData } = parseMessageBuffer(msg.data);
-  const blob = new Blob([imageData], {type: `image/${type}`})
+  const blob = new Blob([imageData], { type: `image/${type}` });
   const url = URL.createObjectURL(blob);
   downloadImage(url);
 }
 
 function registerWorkerListening() {
-  createOrGetWorker().forEach(worker => {
-    worker.onmessage = onWorkerMessage;
-  })
+  createOrGetWorker().forEach((worker, index) => {
+    worker.onmessage = function(msg) { onWorkerMessage(worker, msg, index) };
+  });
 }
 
 function App() {
-  const numberOfWorkers = 2;
-
   useEffect(() => {
     window.addEventListener("beforeunload", terminateAllWorkers);
   }, []);
 
   const qualityRef = useRef<HTMLInputElement | null>(null);
   const typeRef = useRef<HTMLSelectElement | null>(null);
+  const workersRef = useRef<HTMLInputElement | null>(null);
   const getQuality = () => qualityRef?.current?.value ? parseInt(qualityRef?.current?.value) : 100;
   const getType = (): ImageType => typeRef?.current?.value as ImageType;
+  const getWorkerCount = () => parseInt(workersRef?.current?.value);
 
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     // TODO: pass index of file to associate when webworker returns.
@@ -50,6 +60,7 @@ function App() {
 
     // TODO: once upload has started we need to create a lock on submitting
     // any more events until all have completed or failed.
+    const numberOfWorkers = getWorkerCount();
     const workers = createOrGetWorker(numberOfWorkers);
     const getWorker = (index: number) => {
       return workers[(index+1)%numberOfWorkers];
@@ -78,6 +89,8 @@ function App() {
 
   return (
     <div className="App">
+      <label htmlFor="workers">Workers:</label>
+      <input type="text" id="workers" defaultValue={2} ref={workersRef} />
       <label htmlFor="quality">Quality:</label>
       <input type="text" id="quality" defaultValue={75} ref={qualityRef} />
       <label htmlFor="type">Type:</label>

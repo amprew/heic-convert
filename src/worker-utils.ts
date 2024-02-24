@@ -1,16 +1,35 @@
 const windowWorkerKey = "_heic_workers";
 
+type WorkerList = Array<Worker | void>;
+
+declare global {
+  interface Window {
+    _heic_workers: WorkerList;
+  }
+}
+
+
 export const createOrGetWorker = (count?: number): Worker[] => {
   if(typeof window[windowWorkerKey] !== "undefined") {
-    return window[windowWorkerKey];
+    return window[windowWorkerKey].filter(worker => worker !== undefined) as Worker[];
   }
   window[windowWorkerKey] = Array(count).fill(null).map((_, index) => (
     new Worker('dist/worker/worker.js')
-  ));
+  )) as Worker[];
 
-  console.log(window[windowWorkerKey]);
+  return window[windowWorkerKey] as Worker[];
+}
 
-  return window[windowWorkerKey];
+export const removeWorkerIndex = (index) => {
+  if(!window[windowWorkerKey]?.length) {
+    return;
+  }
+
+  delete window[windowWorkerKey][index];
+
+  if(window[windowWorkerKey].every(e => !e)) {
+    delete window[windowWorkerKey];
+  }
 }
 
 export const terminateAllWorkers = () => {
@@ -19,6 +38,7 @@ export const terminateAllWorkers = () => {
   }
 
   for(const worker of window[windowWorkerKey]) {
+    if(!worker) continue;
     worker.terminate();
   }
 
