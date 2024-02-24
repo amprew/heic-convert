@@ -8,14 +8,13 @@ declare global {
   }
 }
 
-
-export const createOrGetWorker = (count?: number): Worker[] => {
+export const createOrGetWorker = (count?: number): Worker[]  => {
   if(typeof window[windowWorkerKey] !== "undefined") {
-    return window[windowWorkerKey].filter(worker => worker !== undefined) as Worker[];
+    return window[windowWorkerKey].filter((worker): worker is Worker => typeof worker !== "undefined");
   }
-  window[windowWorkerKey] = Array(count).fill(null).map((_, index) => (
+  window[windowWorkerKey] = Array(count).fill(null).map((_) => (
     new Worker('dist/worker/worker.js')
-  )) as Worker[];
+  ));
 
   return window[windowWorkerKey] as Worker[];
 }
