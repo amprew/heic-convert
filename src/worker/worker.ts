@@ -2,6 +2,7 @@ import heicDecode from "heic-decode";
 import { convertToImage } from './convert';
 
 import { parseMessageBuffer, buildMessageBuffer } from '../data-transfer';
+import PQueue from 'p-queue';
 
 declare interface DedicatedWorkerGlobalScope {
   postMessage<T = any>(message: T, transfer: Transferable[]): void;
@@ -11,21 +12,23 @@ declare interface DedicatedWorkerGlobalScope {
 
 declare var self: DedicatedWorkerGlobalScope;
 
-let tasksProcessing = false;
-const taskQueue = [];
+const queue = new PQueue();
+
+// we want idle instead of empty as this will make sure pending promises
+// are not inflight.
+queue.on('idle', async () => {
+  console.log("on idle")
+  await waitFor(5000);
+  console.log("on idle 5 seconds", queue.size, queue.pending)
+  if(queue.size > 0 || queue.pending > 0) return;
+  postMessage({ name: "shutdown" });
+});
 
 self.onmessage = async function(msg) {
-  taskQueue.push(msg);
-  if(!tasksProcessing) { processMessage(); }
+  queue.add(() => processMessage(msg));
 }
-async function processMessage() {
-  if(taskQueue.length == 0) {
-    tasksProcessing = false;
-    return;
-  }
-  tasksProcessing = true;
 
-  const msg = taskQueue.shift();
+async function processMessage(msg) {
   const { type, quality, index, imageData } = parseMessageBuffer(msg.data);
 
   console.log('image data', imageData);
@@ -51,8 +54,10 @@ async function processMessage() {
 
   self.postMessage(buffer, [buffer.buffer]);
 
+  // work out how to handle this better
+  await queue.pause();
   await waitFor(100);
-  processMessage();
+  await queue.start();
 }
 
 function waitFor(ms) {

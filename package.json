@@ -10,6 +10,7 @@
     "@types/node": "^20.11.19",
     "@types/react-dom": "^18.2.19",
     "heic-decode": "^2.0.0",
+    "p-queue": "^8.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
