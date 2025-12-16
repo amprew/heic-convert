@@ -5,6 +5,15 @@ import { buildMessageBuffer, parseMessageBuffer } from './data-transfer';
 import { createOrGetWorker, terminateAllWorkers, removeWorkerIndex } from './worker-utils';
 import { ImageType } from './types';
 
+interface FileStatus {
+  id: string;
+  name: string;
+  size: number;
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  downloadUrl?: string;
+  error?: string;
+}
+
 function downloadImage(imageAddress) {
   var link = document.createElement('a');
   link.href = imageAddress;
@@ -14,8 +23,53 @@ function downloadImage(imageAddress) {
   document.body.removeChild(link);
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getStatusIcon(status: FileStatus['status']) {
+  switch (status) {
+    case 'pending':
+      return (
+        <div className="w-5 h-5 border-2 border-gray-300 rounded-full flex items-center justify-center">
+          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+        </div>
+      );
+    case 'processing':
+      return (
+        <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      );
+    case 'completed':
+      return (
+        <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+        </div>
+      );
+    case 'error':
+      return (
+        <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </div>
+      );
+  }
+}
+
 type Task = { name: string };
-function onWorkerMessage(worker: Worker, msg: MessageEvent<Task | Uint8Array>, index: number, updateProgress: () => void) {
+function onWorkerMessage(
+  worker: Worker, 
+  msg: MessageEvent<Task | Uint8Array>, 
+  index: number, 
+  updateProgress: () => void,
+  updateFileStatus: (fileId: string, status: 'completed' | 'error', downloadUrl?: string, error?: string) => void
+) {
   if(msg.data["name"] == "shutdown"){
     console.log("shutting down worker...");
     worker.terminate();
@@ -24,20 +78,39 @@ function onWorkerMessage(worker: Worker, msg: MessageEvent<Task | Uint8Array>, i
   }
 
   if(!(msg.data instanceof Uint8Array)) {
+    console.log("Worker message received but not Uint8Array:", msg.data);
     return;
   }
 
-  console.log("message reply done", msg);
-  const { type, imageData } = parseMessageBuffer(msg.data);
-  const blob = new Blob([imageData], { type: `image/${type}` });
-  const url = URL.createObjectURL(blob);
-  downloadImage(url);
-  updateProgress();
+  console.log("Worker message reply done", msg);
+  
+  try {
+    const { type, imageData, index: fileIndex } = parseMessageBuffer(msg.data);
+    console.log(`Parsed message - fileIndex: ${fileIndex}, type: ${type}, imageDataLength: ${imageData.length}`);
+    
+    const blob = new Blob([imageData], { type: `image/${type}` });
+    const url = URL.createObjectURL(blob);
+    
+    const fileId = `file-${fileIndex}`;
+    console.log(`About to update file status for: ${fileId}`);
+    
+    // Update file status with download URL using the correct file ID
+    updateFileStatus(fileId, 'completed', url);
+    
+    downloadImage(url);
+    updateProgress();
+  } catch (error) {
+    console.error("Error processing worker message:", error);
+  }
 }
 
-function registerWorkerListening(updateProgress: () => void) {
-  createOrGetWorker().forEach((worker, index) => {
-    worker.onmessage = function(msg) { onWorkerMessage(worker, msg, index, updateProgress) };
+function registerWorkerListening(
+  workers: Worker[],
+  updateProgress: () => void,
+  updateFileStatus: (fileId: string, status: 'completed' | 'error', downloadUrl?: string, error?: string) => void
+) {
+  workers.forEach((worker, index) => {
+    worker.onmessage = function(msg) { onWorkerMessage(worker, msg, index, updateProgress, updateFileStatus) };
   });
 }
 
@@ -47,10 +120,21 @@ function App() {
   const [totalFiles, setTotalFiles] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [quality, setQuality] = useState(75);
+  const [fileList, setFileList] = useState<FileStatus[]>([]);
+  const [fileCounter, setFileCounter] = useState(0);
+  const [workersInitialized, setWorkersInitialized] = useState(false);
 
   useEffect(() => {
     window.addEventListener("beforeunload", terminateAllWorkers);
   }, []);
+
+  // Initialize worker listeners once
+  useEffect(() => {
+    if (!workersInitialized) {
+      // We'll register workers when first needed
+      setWorkersInitialized(true);
+    }
+  }, [workersInitialized]);
 
   const qualityRef = useRef<HTMLInputElement | null>(null);
   const typeRef = useRef<HTMLSelectElement | null>(null);
@@ -62,11 +146,28 @@ function App() {
   const updateProgress = () => {
     setConvertedCount(prev => {
       const newCount = prev + 1;
-      if (newCount >= totalFiles) {
-        setIsConverting(false);
-      }
+      // Check if all files in current batch are completed or failed
+      setFileList(currentFileList => {
+        const currentBatchInProgress = currentFileList.filter(f => 
+          f.status === 'pending' || f.status === 'processing'
+        ).length;
+        
+        if (currentBatchInProgress <= 1) { // <= 1 because this file is about to complete
+          setIsConverting(false);
+        }
+        return currentFileList;
+      });
       return newCount;
     });
+  };
+
+  const updateFileStatus = (fileId: string, status: 'completed' | 'error', downloadUrl?: string, error?: string) => {
+    console.log(`Updating file status: ${fileId} -> ${status}`);
+    setFileList(prev => prev.map(file => 
+      file.id === fileId 
+        ? { ...file, status, downloadUrl, error }
+        : file
+    ));
   };
 
   async function processFiles(files: FileList) {
@@ -77,29 +178,64 @@ function App() {
       return;
     }
 
+    // Calculate starting index for this batch BEFORE updating counter
+    const startingFileIndex = fileCounter;
+
+    // Create new file entries with unique IDs and append to existing list
+    const newFiles: FileStatus[] = Array.from(files).map((file, index) => ({
+      id: `file-${startingFileIndex + index}`,
+      name: file.name,
+      size: file.size,
+      status: 'pending'
+    }));
+
+    // Update file counter for next batch
+    setFileCounter(prev => prev + files.length);
+
+    // Append new files to existing list
+    setFileList(prev => [...prev, ...newFiles]);
     setIsConverting(true);
     setConvertedCount(0);
     setTotalFiles(files.length);
 
+    // Terminate existing workers and create new ones for this batch
+    terminateAllWorkers();
     const workers = createOrGetWorker(numberOfWorkers);
+    
+    // Register worker listeners for this batch
+    registerWorkerListening(workers, updateProgress, updateFileStatus);
+    
     const getWorker = (index: number) => {
-      return workers[(index+1)%numberOfWorkers];
+      return workers[index % numberOfWorkers];
     }
-    registerWorkerListening(updateProgress);
 
     const numOfFiles = files.length;
+    
     for(let i=0; i<numOfFiles; i++) {
       const file = files[i];
+      const fileId = `file-${startingFileIndex + i}`;
+      
+      // Update file status to processing
+      setFileList(prev => prev.map(f => 
+        f.id === fileId
+          ? { ...f, status: 'processing' }
+          : f
+      ));
 
-      const uint8Array = await readImageBuffer(file);
-      const buffer = buildMessageBuffer({
-        type: getType(),
-        quality: getQuality(),
-        index: i,
-        imageData: uint8Array
-      })
+      try {
+        const uint8Array = await readImageBuffer(file);
+        const buffer = buildMessageBuffer({
+          type: getType(),
+          quality: getQuality(),
+          index: startingFileIndex + i,
+          imageData: uint8Array
+        });
 
-      getWorker(i).postMessage(buffer, [buffer.buffer]);
+        getWorker(i).postMessage(buffer, [buffer.buffer]);
+      } catch (error) {
+        // Update file status to error if reading fails
+        updateFileStatus(fileId, 'error', undefined, error.message);
+      }
     }
   }
 
@@ -126,6 +262,16 @@ function App() {
     if(files.length > 0) {
       await processFiles(files);
     }
+  };
+
+  const clearFileList = () => {
+    terminateAllWorkers();
+    setFileList([]);
+    setTotalFiles(0);
+    setConvertedCount(0);
+    setIsConverting(false);
+    setFileCounter(0);
+    setWorkersInitialized(false);
   };
 
   return (
@@ -220,12 +366,12 @@ function App() {
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">Converting Images</h3>
               <p className="text-gray-600 mb-4">
-                Processing {convertedCount} of {totalFiles} files
+                Processing files in current batch...
               </p>
               <div className="w-full max-w-xs mx-auto bg-gray-200 rounded-full h-2 overflow-hidden">
                 <div 
                   className="h-full bg-blue-600 transition-all duration-300 ease-out"
-                  style={{ width: `${(convertedCount / totalFiles) * 100}%` }}
+                  style={{ width: `${totalFiles > 0 ? (convertedCount / totalFiles) * 100 : 0}%` }}
                 ></div>
               </div>
             </div>
@@ -287,6 +433,93 @@ function App() {
             </div>
           )}
         </div>
+
+        {/* File Status Table */}
+        {fileList.length > 0 && (
+          <div className="mt-8">
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">File Status</h3>
+                <button
+                  onClick={clearFileList}
+                  className="text-sm text-gray-500 hover:text-gray-700 transition-colors duration-200"
+                  disabled={isConverting}
+                >
+                  Clear List
+                </button>
+              </div>
+              <div className="overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        File Name
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Size
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {fileList.map((file) => (
+                      <tr key={file.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            {getStatusIcon(file.status)}
+                            <span className="ml-2 text-sm font-medium text-gray-900 capitalize">
+                              {file.status}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{file.name}</div>
+                          {file.error && (
+                            <div className="text-xs text-red-500 mt-1">{file.error}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatFileSize(file.size)}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                          {file.status === 'completed' && file.downloadUrl ? (
+                            <button
+                              onClick={() => downloadImage(file.downloadUrl!)}
+                              className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                            >
+                              Download
+                            </button>
+                          ) : file.status === 'error' ? (
+                            <span className="text-red-500">Failed</span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Summary */}
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <div>
+                  {fileList.filter(f => f.status === 'completed').length} of {fileList.length} files converted
+                </div>
+                {fileList.filter(f => f.status === 'error').length > 0 && (
+                  <div className="text-red-600">
+                    {fileList.filter(f => f.status === 'error').length} failed
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Success Message */}
         {totalFiles > 0 && !isConverting && (

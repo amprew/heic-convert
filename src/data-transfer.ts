@@ -19,13 +19,13 @@ const nameToImageType: Record<ImageType, ImageTypeData> = {
 
 // Function to build a buffer with metadata, compressed image data, and optional dimensions
 export function buildMessageBuffer({
-  type, quality, index, width, height, imageData
+  type, quality, index, width = 0, height = 0, imageData
 }: {
   type: ImageType,
   quality: number,
   index: number,
-  width: number,
-  height: number,
+  width?: number,
+  height?: number,
   imageData: Uint8Array
 }): Uint8Array {
   if (index > 255) throw new Error("Image index cannot be greater than 255.");
@@ -34,6 +34,8 @@ export function buildMessageBuffer({
 
   // Compress the image data using Pako
   const compressedImageData = pako.deflate(imageData);
+
+  console.log(`Building message buffer - type: ${type}, quality: ${quality}, index: ${index}, width: ${width}, height: ${height}`);
 
   // Allocate buffer: 3 bytes (type, quality, index) + 4 bytes (width, height) + compressed image data length
   const buffer = new Uint8Array(7 + compressedImageData.byteLength);
@@ -66,6 +68,9 @@ export function parseMessageBuffer(buffer: Uint8Array): {
   const index = buffer[2];                // Byte 2: Index
   const width = (buffer[3] << 8) | buffer[4];  // Bytes 3-4: Width
   const height = (buffer[5] << 8) | buffer[6]; // Bytes 5-6: Height
+
+  console.log(`Parsing message buffer - raw bytes: [${buffer[0]}, ${buffer[1]}, ${buffer[2]}, ${buffer[3]}, ${buffer[4]}, ${buffer[5]}, ${buffer[6]}]`);
+  console.log(`Parsed values - typeInt: ${typeInt}, quality: ${quality}, index: ${index}, width: ${width}, height: ${height}`);
 
   const type = imageTypeToName[typeInt];
 
